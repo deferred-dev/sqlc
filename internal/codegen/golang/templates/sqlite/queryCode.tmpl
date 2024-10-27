@@ -95,9 +95,9 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
         return
     }
     if !ok {
-        err = ErrNoRows
+        err = errNoRows
     } else if r.Next() {
-        err = ErrTooManyRows
+        err = errTooManyRows
     } else {
         result = r.Row
     }

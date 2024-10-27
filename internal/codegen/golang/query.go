@@ -308,7 +308,7 @@ func (q *Query) ReceiverType() string {
 	if q.IsReadOnly() {
 		return "Queries"
 	}
-	return "WriteTx"
+	return "WriteTxn"
 }
 
 func (q *Query) hasRetType() bool {

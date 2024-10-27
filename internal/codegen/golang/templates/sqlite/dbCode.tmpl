@@ -2,6 +2,7 @@
 
 type Queries struct {
     conn *sqlite.Conn
+    pin runtime.Pinner
     {{- range .ReadQueries }}
     {{.FieldName}} {{.MethodName}}Stmt
     {{- end}}
@@ -23,6 +24,7 @@ func (q *Queries) init(conn *sqlite.Conn) {
 }
 
 func (q *Queries) Close() *lib.Error {
+    q.pin.Unpin()
     var err, firstErr *lib.Error
     {{- range .ReadQueries }}
     q.{{.FieldName}}.Close()

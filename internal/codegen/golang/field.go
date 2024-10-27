@@ -35,7 +35,7 @@ func (gf *Field) IsNullable() bool {
 }
 
 func (gf *Field) Serialize() bool {
-	return strings.HasPrefix(gf.Type, "*") || strings.HasSuffix(gf.Type, "ID")
+	return gf.IsPointer() || strings.HasSuffix(gf.Type, "ID") || strings.HasSuffix(gf.Type, "Blob")
 }
 
 func (gf *Field) HasLen() bool {
@@ -44,6 +44,18 @@ func (gf *Field) HasLen() bool {
 
 func (gf *Field) Is64Bit() bool {
 	return strings.HasSuffix(gf.Type, "64")
+}
+
+func (gf *Field) IsPointer() bool {
+	return strings.HasPrefix(gf.Type, "*")
+}
+
+func (gf *Field) NeedsCast(toType string) bool {
+	ty := gf.Type
+	if gf.HasSqlcSlice() {
+		ty = ty[2:]
+	}
+	return ty != toType
 }
 
 func (gf *Field) BindType() string {
@@ -56,12 +68,16 @@ func (gf *Field) BindType() string {
 		return "int64"
 	case ty == "float32":
 		return "float64"
-	case ty == "TimeOrderedID":
+	case strings.HasSuffix(ty, "TimeOrderedID"):
 		return "[]byte"
 	case strings.HasSuffix(ty, "Bool"):
 		return "bool"
-	case strings.HasSuffix(ty, "ID"):
+	case strings.Contains(ty, "Null"):
 		return "int64"
+	case strings.HasSuffix(ty, "ID"), strings.HasSuffix(ty, "Type"), strings.HasSuffix(ty, "Priority"):
+		return "int64"
+	case strings.IndexByte(ty, '.') >= 0:
+		return "[]byte"
 	default:
 		return ty
 	}
@@ -84,12 +100,52 @@ func (gf *Field) BindMethod() string {
 func (gf *Field) FetchMethod() string {
 	bindType := gf.BindType()
 	switch bindType {
+	case "string":
+		return "r.stmt.ColumnText"
 	case "[]byte":
-		return "r.stmt.ColumnBytes"
+		if gf.Serialize() {
+			// We can use zero-copy bytes to deserialize the field
+			return "r.columnPeekBytes"
+		}
+		return "r.columnBytes"
 	case "float64":
 		return "r.stmt.ColumnFloat"
 	default:
 		return "r.stmt.Column" + toPascalCase(bindType)
+	}
+}
+
+func (gf *Field) FetchInto() string {
+	if gf.Name == "" {
+		return "r.Row"
+	}
+	return "r.Row." + gf.Name
+}
+
+func (gf *Field) DeserializeMethod() string {
+	ty := gf.Type
+	if gf.HasSqlcSlice() {
+		ty = ty[2:]
+	} else if strings.HasPrefix(ty, "*") {
+		ty = ty[1:]
+	}
+	i := strings.IndexByte(ty, '.')
+	if i >= 0 {
+		return ty[:i] + ".Deserialize" + toPascalCase(ty[i+1:])
+	}
+	panic("not a deserializable type: " + ty)
+}
+
+func (gf *Field) WithVariable(v string) *Field {
+	return &Field{
+		Name:             gf.Name,
+		VariableForField: v,
+		DBName:           gf.DBName,
+		Type:             gf.Type,
+		Tags:             gf.Tags,
+		Comment:          gf.Comment,
+		Column:           gf.Column,
+		EmbedFields:      gf.EmbedFields,
 	}
 }
 

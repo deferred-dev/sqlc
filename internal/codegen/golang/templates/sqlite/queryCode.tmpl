@@ -25,7 +25,7 @@ type {{.Ret.Type}} struct { {{- range .Ret.Struct.Fields}}
 }
 {{end}}
 
-func (r *{{ .MethodName }}Stmt) bind({{ .Arg.Pair }}) {
+func (r *{{ .MethodName }}Stmt) bind(q *{{ .ReceiverType }}, {{ .Arg.Pair }}) {
     {{- $arg := .Arg }}
     query := {{.ConstantName}}
     {{- if .Arg.HasSqlcSlices }}
@@ -41,17 +41,27 @@ func (r *{{ .MethodName }}Stmt) bind({{ .Arg.Pair }}) {
         {{- end }}
     {{- end }}
 
-    r.init(r.queries, "{{.MethodName}}", query, {{ .Arg.HasSqlcSlices }})
+    {{- if .IsReadOnly }}
+    r.init(q, "{{.MethodName}}", query, {{ .Arg.HasSqlcSlices }})
+    {{- else }}
+    r.init(&q.Queries, "{{.MethodName}}", query, {{ .Arg.HasSqlcSlices }})
+    {{- end }}
 
+    {{- $fields := .Arg.Fields }}
+    {{- if $fields }}
     param := 1
-    {{- range .Arg.Fields }}
+    {{- range $fields }}
         {{- if .HasSqlcSlice }}
-            for _, v := range {{ .VariableForField }} {
-                {{- template "bindField" . }}
-            }
+        for _, raw := range {{ .VariableForField }} {
+            {{ $field := .WithVariable "raw" }}
+            {{- template "bindField" $field }}
+        }
         {{- else }}
+        {
             {{- template "bindField" . }}
+        }
         {{- end }}
+    {{- end }}
     {{- end }}
 }
 
@@ -77,7 +87,7 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
 {{if eq .Cmd ":one"}}
 func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.DefineType}}, err *lib.Error) {
     r := &q.{{ .FieldName }}
-    r.bind({{ .Arg.Names }})
+    r.bind(q, {{ .Arg.Names }})
     defer r.Reset()
     ok := r.Next()
     err = r.Err()
@@ -85,12 +95,12 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
         return
     }
     if !ok {
-        return ErrNoRows
+        err = ErrNoRows
+    } else if r.Next() {
+        err = ErrTooManyRows
+    } else {
+        result = r.Row
     }
-    if r.Next() {
-        return ErrTooManyRows
-    }
-    result = r.Row
     return
 }
 {{end}}
@@ -98,7 +108,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
 {{if eq .Cmd ":many"}}
 func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret.DefineType}}, err *lib.Error) {
     r := &q.{{ .FieldName }}
-    r.bind({{ .Arg.Names }})
+    r.bind(q, {{ .Arg.Names }})
     defer r.Reset()
     for r.Next() {
         results = append(results, r.Row)
@@ -114,7 +124,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret
 {{if eq .Cmd ":iter"}}
 func (q *{{ .ReceiverType }}) Begin{{.MethodName}}({{ .Arg.Pair }}) func(yield func(row {{.Ret.DefineType}}) bool) {
     r := &q.{{ .FieldName }}
-    r.bind({{ .Arg.Names }})
+    r.bind(q, {{ .Arg.Names }})
     return func(yield func(row {{.Ret.DefineType}}) bool) {
         defer r.Reset()
         for r.Next() && yield(r.Row) {}
@@ -129,7 +139,7 @@ func (q *{{ .ReceiverType }}) End{{.MethodName}}() *lib.Error {
 {{if eq .Cmd ":exec"}}
 func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) *lib.Error {
     r := &q.{{ .FieldName }}
-    r.bind({{ .Arg.Names }})
+    r.bind(q, {{ .Arg.Names }})
     defer r.Reset()
     r.Next()
     return r.Err()
@@ -140,29 +150,40 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) *lib.Error {
 {{end}}
 
 {{define "bindField"}}
-    {
+    {{- if .EmbedFields }}
+        {{- range .EmbedFields }}
+            {{ template "bindField" . }}
+        {{- end }}
+    {{- else }}
     {{- $bindType := .BindType }}
     var v {{ $bindType }}
+    {{- if and .IsPointer .IsNullable }}
+    isNull := {{ .VariableForField }} == nil
+    if !isNull {
+    {{- else }}
     isNull := false
+    {
+    {{- end }}
     {{- if .Serialize }}
+    {{- if eq $bindType "string" }}
         var err *lib.Error
-        {{- if eq $bindType "string" }}
-            v, isNull, err = {{ .VariableForField }}.SerializeString()
-            if err != nil {
-                r.setErr(err)
-            }
-        {{- else if eq $bindType "bool" }}
-            v, isNull = {{ .VariableForField }}.SerializeBool()
-        {{- else if eq $bindType "float64" }}
-            v, isNull = {{ .VariableForField }}.SerializeFloat()
-        {{- else if eq $bindType "int64" }}
-            v, isNull = {{ .VariableForField }}.SerializeInt()
-        {{- else }}
-            v, isNull, err = {{ .VariableForField }}.SerializeBytes()
-            if err != nil {
-                r.setErr(err)
-            }
-        {{- end }}
+        v, isNull, err = {{ .VariableForField }}.SerializeString()
+        if err != nil {
+            r.setErr(err)
+        }
+    {{- else if eq $bindType "bool" }}
+        v, isNull = {{ .VariableForField }}.SerializeBool()
+    {{- else if eq $bindType "float64" }}
+        v, isNull = {{ .VariableForField }}.SerializeFloat()
+    {{- else if eq $bindType "int64" }}
+        v, isNull = {{ .VariableForField }}.SerializeInt()
+    {{- else }}
+        var err *lib.Error
+        v, isNull, err = {{ .VariableForField }}.SerializeBytes()
+        if err != nil {
+            r.setErr(err)
+        }
+    {{- end }}
     {{- else if .HasLen }}
         v = {{ .VariableForField }}
         {{- if .IsNullable }}
@@ -171,41 +192,49 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) *lib.Error {
     {{- else }}
         {{- if eq $bindType "bool" }}
             v = {{ .VariableForField }}
-        {{- else if not .Is64Bit }}
+        {{- else if .NeedsCast $bindType }}
             v = {{ $bindType }}({{ .VariableForField }})
         {{- else }}
             v = {{ .VariableForField }}
         {{- end }}
     {{- end }}
-        if isNull {
-            r.stmt.BindNull(param)
-        } else {
-            {{ .BindMethod }}(param, v)
-        }
+    }
+    if isNull {
+        r.stmt.BindNull(param)
+    } else {
+        {{ .BindMethod }}(param, v)
     }
     param++
+    {{- end }}
 {{end}}
 
 {{define "fetchColumn"}}
+    {{- if .EmbedFields }}
+        {{- range .EmbedFields }}
+            {{ template "fetchColumn" . }}
+        {{- end }}
+    {{- else }}
     {{- if .IsNullable }}
     if r.stmt.ColumnIsNull(col) {
         var v {{ .Type }}
-        r.Row.{{ .Name }} = v
+        {{ .FetchInto }} = v
     } else {
     {{- else }}
     {
     {{- end }}
         raw := {{ .FetchMethod }}(col)
         {{- if .Serialize }}
-            res, err := Deserialize{{ .Type }}(raw)
+            v, err := {{ .DeserializeMethod }}(raw)
             if err != nil {
                 r.setErr(err)
             }
-        {{- else if not (or .Is64Bit (eq .BindType "bool")) }}
-            r.Row.{{ .Name }} = {{ .Type }}(v)
+        {{- else if .NeedsCast .BindType }}
+            v := {{ .Type }}(raw)
         {{- else }}
-            r.Row.{{ .Name }} = v
+            v := raw
         {{- end }}
+        {{ .FetchInto }} = v
     }
     col++
+    {{- end }}
 {{end}}

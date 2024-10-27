@@ -136,9 +136,13 @@ func (v *QueryValue) Fields() []Field {
 		if v.Typ == "" {
 			return nil
 		}
+		name := v.Name
+		if !v.IsStruct() {
+			name = ""
+		}
 		return []Field{
 			{
-				Name:             v.Name,
+				Name:             name,
 				VariableForField: v.Name,
 				DBName:           v.DBName,
 				Type:             v.Type(),

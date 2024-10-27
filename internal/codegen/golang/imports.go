@@ -122,7 +122,9 @@ func (i *importer) dbImports() fileImports {
 	pkg := []ImportSpec{
 		{Path: "github.com/deferred-dev/deferred/lib"},
 	}
-	var std []ImportSpec
+	std := []ImportSpec{
+		{Path: "runtime"},
+	}
 
 	sqlpkg := parseDriver(i.Options.SqlPackage)
 	switch sqlpkg {
@@ -162,7 +164,6 @@ var pqtypeTypes = map[string]struct{}{
 
 func buildImports(options *opts.Options, queries []Query, uses func(string) bool) (map[string]struct{}, map[ImportSpec]struct{}) {
 	pkg := make(map[ImportSpec]struct{})
-	pkg[ImportSpec{Path: "github.com/deferred-dev/deferred/lib"}] = struct{}{}
 	std := make(map[string]struct{})
 
 	if uses("sql.Null") {
@@ -339,6 +340,8 @@ func (i *importer) queryImports(filename string) fileImports {
 		}
 		return false
 	})
+
+	pkg[ImportSpec{Path: "github.com/deferred-dev/deferred/lib"}] = struct{}{}
 
 	sliceScan := func() bool {
 		for _, q := range gq {

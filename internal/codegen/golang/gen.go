@@ -250,37 +250,45 @@ func generate(req *plugin.GenerateRequest, options *opts.Options, enums []Enum, 
 
 	output := map[string]string{}
 
-	execute := func(name, templateName string) error {
-		imports := i.Imports(name)
-		replacedQueries := replaceConflictedArg(imports, queries)
-		var readQueries []Query
-		var writeQueries []Query
-		for _, q := range replacedQueries {
-			if q.Arg.Struct != nil {
-				for i := range q.Arg.Struct.Fields {
-					f := &q.Arg.Struct.Fields[i]
-					f.VariableForField = q.Arg.VariableForField(*f)
+	var readQueries []Query
+	var writeQueries []Query
+	for _, q := range queries {
+		if q.Arg.Struct != nil {
+			for i := range q.Arg.Struct.Fields {
+				f := &q.Arg.Struct.Fields[i]
+				f.VariableForField = q.Arg.VariableForField(*f)
+				if len(f.EmbedFields) != 0 {
+					fixEmbedFieldsNames(f.EmbedFields, f.Name)
 				}
-			}
-			if q.Ret.Struct != nil {
-				for i := range q.Ret.Struct.Fields {
-					f := &q.Ret.Struct.Fields[i]
-					f.VariableForField = q.Ret.VariableForField(*f)
-				}
-			}
-
-			if q.IsReadOnly() {
-				readQueries = append(readQueries, q)
-			} else {
-				writeQueries = append(writeQueries, q)
 			}
 		}
+		if q.Ret.Struct != nil {
+			for i := range q.Ret.Struct.Fields {
+				f := &q.Ret.Struct.Fields[i]
+				f.VariableForField = q.Ret.VariableForField(*f)
+				if len(f.EmbedFields) != 0 {
+					fixEmbedFieldsNames(f.EmbedFields, f.Name)
+				}
+			}
+		}
+
+		if q.IsReadOnly() {
+			readQueries = append(readQueries, q)
+		} else {
+			writeQueries = append(writeQueries, q)
+		}
+	}
+
+	execute := func(name, templateName string) error {
+		imports := i.Imports(name)
+		replacedReadQueries := replaceConflictedArg(imports, readQueries)
+		replacedWriteQueries := replaceConflictedArg(imports, writeQueries)
 
 		var b bytes.Buffer
 		w := bufio.NewWriter(&b)
 		tctx.SourceName = name
-		tctx.ReadQueries = readQueries
-		tctx.WriteQueries = writeQueries
+		tctx.ReadQueries = replacedReadQueries
+		tctx.WriteQueries = replacedWriteQueries
 		err := tmpl.ExecuteTemplate(w, templateName, &tctx)
 		w.Flush()
 		if err != nil {
@@ -367,6 +375,16 @@ func generate(req *plugin.GenerateRequest, options *opts.Options, enums []Enum, 
 	}
 
 	return &resp, nil
+}
+
+func fixEmbedFieldsNames(fields []Field, name string) {
+	for i := range fields {
+		f := &fields[i]
+		f.Name = name + "." + f.Name
+		if len(f.EmbedFields) != 0 {
+			fixEmbedFieldsNames(f.EmbedFields, f.Name)
+		}
+	}
 }
 
 func usesCopyFrom(queries []Query) bool {

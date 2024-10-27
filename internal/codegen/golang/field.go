@@ -11,22 +11,86 @@ import (
 )
 
 type Field struct {
-	Name    string // CamelCased name for Go
-	DBName  string // Name as used in the DB
-	Type    string
-	Tags    map[string]string
-	Comment string
-	Column  *plugin.Column
+	Name             string // CamelCased name for Go
+	VariableForField string // Variable name for the field (including structVar.name, if part of a struct)
+	DBName           string // Name as used in the DB
+	Type             string
+	Tags             map[string]string
+	Comment          string
+	Column           *plugin.Column
 	// EmbedFields contains the embedded fields that require scanning.
 	EmbedFields []Field
 }
 
-func (gf Field) Tag() string {
+func (gf *Field) Tag() string {
 	return TagsToString(gf.Tags)
 }
 
-func (gf Field) HasSqlcSlice() bool {
-	return gf.Column.IsSqlcSlice
+func (gf *Field) HasSqlcSlice() bool {
+	return gf.Column != nil && gf.Column.IsSqlcSlice
+}
+
+func (gf *Field) IsNullable() bool {
+	return strings.HasPrefix(gf.Type, "types.Null") || strings.HasSuffix(gf.Type, "ID") || gf.Column != nil && !gf.Column.NotNull
+}
+
+func (gf *Field) Serialize() bool {
+	return strings.HasPrefix(gf.Type, "*") || strings.HasSuffix(gf.Type, "ID")
+}
+
+func (gf *Field) HasLen() bool {
+	return gf.Type == "[]byte" || gf.Type == "string"
+}
+
+func (gf *Field) Is64Bit() bool {
+	return strings.HasSuffix(gf.Type, "64")
+}
+
+func (gf *Field) BindType() string {
+	ty := gf.Type
+	if gf.HasSqlcSlice() {
+		ty = ty[2:]
+	}
+	switch {
+	case ty == "uint8", ty == "int8", ty == "uint32":
+		return "int64"
+	case ty == "float32":
+		return "float64"
+	case ty == "TimeOrderedID":
+		return "[]byte"
+	case strings.HasSuffix(ty, "Bool"):
+		return "bool"
+	case strings.HasSuffix(ty, "ID"):
+		return "int64"
+	default:
+		return ty
+	}
+}
+
+func (gf *Field) BindMethod() string {
+	bindType := gf.BindType()
+	switch bindType {
+	case "string":
+		return "r.bindString"
+	case "[]byte":
+		return "r.bindBytes"
+	case "float64":
+		return "r.stmt.BindFloat"
+	default:
+		return "r.stmt.Bind" + toPascalCase(bindType)
+	}
+}
+
+func (gf *Field) FetchMethod() string {
+	bindType := gf.BindType()
+	switch bindType {
+	case "[]byte":
+		return "r.stmt.ColumnBytes"
+	case "float64":
+		return "r.stmt.ColumnFloat"
+	default:
+		return "r.stmt.Column" + toPascalCase(bindType)
+	}
 }
 
 func TagsToString(tags map[string]string) string {

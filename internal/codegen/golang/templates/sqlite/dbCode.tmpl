@@ -1,0 +1,57 @@
+{{define "dbCodeTemplateStd"}}
+
+type Queries struct {
+    conn *sqlite.Conn
+    {{- range .ReadQueries }}
+    {{.FieldName}} {{.MethodName}}Stmt
+    {{- end}}
+}
+
+type WriteTx struct {
+    Queries
+    finish func(*error)
+    {{- range .WriteQueries }}
+    {{.FieldName}} {{.MethodName}}Stmt
+    {{- end}}
+}
+
+func (q *Queries) init(conn *sqlite.Conn) {
+    if q.conn != nil {
+        panic("Queries already initialized")
+    }
+    q.conn = conn
+}
+
+func (q *Queries) Close() *lib.Error {
+    var err, firstErr *lib.Error
+    {{- range .ReadQueries }}
+    q.{{.FieldName}}.Close()
+    err = q.{{.FieldName}}.Err()
+    if firstErr == nil {
+        firstErr = err
+    }
+    {{- end}}
+    extErr := q.conn.Close()
+    if firstErr == nil && extErr != nil {
+        firstErr = lib.Wrap(extErr)
+    }
+    return firstErr
+}
+
+func (txn *WriteTx) Close() *lib.Error {
+    var err, firstErr *lib.Error
+    {{- range .WriteQueries }}
+    txn.{{.FieldName}}.Close()
+    err = txn.{{.FieldName}}.Err()
+    if firstErr == nil {
+        firstErr = err
+    }
+    {{- end}}
+    err = txn.Queries.Close()
+    if firstErr == nil {
+        firstErr = err
+    }
+    return firstErr
+}
+
+{{end}}

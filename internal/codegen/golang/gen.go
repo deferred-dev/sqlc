@@ -17,13 +17,14 @@ import (
 )
 
 type tmplCtx struct {
-	Q           string
-	Package     string
-	SQLDriver   opts.SQLDriver
-	Enums       []Enum
-	Structs     []Struct
-	GoQueries   []Query
-	SqlcVersion string
+	Q            string
+	Package      string
+	SQLDriver    opts.SQLDriver
+	Enums        []Enum
+	Structs      []Struct
+	ReadQueries  []Query
+	WriteQueries []Query
+	SqlcVersion  string
 
 	// TODO: Race conditions
 	SourceName string
@@ -102,6 +103,23 @@ func (t *tmplCtx) codegenQueryRetval(q Query) (string, error) {
 	default:
 		return "", fmt.Errorf("unhandled q.Cmd case %q", q.Cmd)
 	}
+}
+
+func (t *tmplCtx) AllQueries(sourceFile string) []Query {
+	var allQueries []Query
+	for i := range t.ReadQueries {
+		q := &t.ReadQueries[i]
+		if q.SourceName == sourceFile {
+			allQueries = append(allQueries, *q)
+		}
+	}
+	for i := range t.WriteQueries {
+		q := &t.WriteQueries[i]
+		if q.SourceName == sourceFile {
+			allQueries = append(allQueries, *q)
+		}
+	}
+	return allQueries
 }
 
 func Generate(ctx context.Context, req *plugin.GenerateRequest) (*plugin.GenerateResponse, error) {
@@ -235,11 +253,34 @@ func generate(req *plugin.GenerateRequest, options *opts.Options, enums []Enum, 
 	execute := func(name, templateName string) error {
 		imports := i.Imports(name)
 		replacedQueries := replaceConflictedArg(imports, queries)
+		var readQueries []Query
+		var writeQueries []Query
+		for _, q := range replacedQueries {
+			if q.Arg.Struct != nil {
+				for i := range q.Arg.Struct.Fields {
+					f := &q.Arg.Struct.Fields[i]
+					f.VariableForField = q.Arg.VariableForField(*f)
+				}
+			}
+			if q.Ret.Struct != nil {
+				for i := range q.Ret.Struct.Fields {
+					f := &q.Ret.Struct.Fields[i]
+					f.VariableForField = q.Ret.VariableForField(*f)
+				}
+			}
+
+			if q.IsReadOnly() {
+				readQueries = append(readQueries, q)
+			} else {
+				writeQueries = append(writeQueries, q)
+			}
+		}
 
 		var b bytes.Buffer
 		w := bufio.NewWriter(&b)
 		tctx.SourceName = name
-		tctx.GoQueries = replacedQueries
+		tctx.ReadQueries = readQueries
+		tctx.WriteQueries = writeQueries
 		err := tmpl.ExecuteTemplate(w, templateName, &tctx)
 		w.Flush()
 		if err != nil {

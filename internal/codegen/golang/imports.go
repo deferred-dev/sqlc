@@ -119,10 +119,10 @@ func (i *importer) Imports(filename string) [][]ImportSpec {
 }
 
 func (i *importer) dbImports() fileImports {
-	var pkg []ImportSpec
-	std := []ImportSpec{
-		{Path: "context"},
+	pkg := []ImportSpec{
+		{Path: "github.com/deferred-dev/deferred/lib"},
 	}
+	var std []ImportSpec
 
 	sqlpkg := parseDriver(i.Options.SqlPackage)
 	switch sqlpkg {
@@ -133,7 +133,7 @@ func (i *importer) dbImports() fileImports {
 		pkg = append(pkg, ImportSpec{Path: "github.com/jackc/pgx/v5/pgconn"})
 		pkg = append(pkg, ImportSpec{Path: "github.com/jackc/pgx/v5"})
 	default:
-		std = append(std, ImportSpec{Path: "database/sql"})
+		std = append(std, ImportSpec{Path: "zombiezen.com/go/sqlite"})
 		if i.Options.EmitPreparedQueries {
 			std = append(std, ImportSpec{Path: "fmt"})
 		}
@@ -162,6 +162,7 @@ var pqtypeTypes = map[string]struct{}{
 
 func buildImports(options *opts.Options, queries []Query, uses func(string) bool) (map[string]struct{}, map[ImportSpec]struct{}) {
 	pkg := make(map[ImportSpec]struct{})
+	pkg[ImportSpec{Path: "github.com/deferred-dev/deferred/lib"}] = struct{}{}
 	std := make(map[string]struct{})
 
 	if uses("sql.Null") {
@@ -298,16 +299,12 @@ func sortedImports(std map[string]struct{}, pkg map[ImportSpec]struct{}) fileImp
 
 func (i *importer) queryImports(filename string) fileImports {
 	var gq []Query
-	anyNonCopyFrom := false
 	for _, query := range i.Queries {
 		if usesBatch([]Query{query}) {
 			continue
 		}
 		if query.SourceName == filename {
 			gq = append(gq, query)
-			if query.Cmd != metadata.CmdCopyFrom {
-				anyNonCopyFrom = true
-			}
 		}
 	}
 
@@ -388,10 +385,6 @@ func (i *importer) queryImports(filename string) fileImports {
 			}
 		}
 		return false
-	}
-
-	if anyNonCopyFrom {
-		std["context"] = struct{}{}
 	}
 
 	sqlpkg := parseDriver(i.Options.SqlPackage)

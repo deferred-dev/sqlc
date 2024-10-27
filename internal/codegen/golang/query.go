@@ -23,19 +23,19 @@ type QueryValue struct {
 	Column *plugin.Column
 }
 
-func (v QueryValue) EmitStruct() bool {
+func (v *QueryValue) EmitStruct() bool {
 	return v.Emit
 }
 
-func (v QueryValue) IsStruct() bool {
+func (v *QueryValue) IsStruct() bool {
 	return v.Struct != nil
 }
 
-func (v QueryValue) IsPointer() bool {
+func (v *QueryValue) IsPointer() bool {
 	return v.EmitPointer && v.Struct != nil
 }
 
-func (v QueryValue) isEmpty() bool {
+func (v *QueryValue) isEmpty() bool {
 	return v.Typ == "" && v.Name == "" && v.Struct == nil
 }
 
@@ -44,7 +44,15 @@ type Argument struct {
 	Type string
 }
 
-func (v QueryValue) Pair() string {
+func (v *QueryValue) Names() string {
+	var out []string
+	for _, arg := range v.Pairs() {
+		out = append(out, arg.Name)
+	}
+	return strings.Join(out, ",")
+}
+
+func (v *QueryValue) Pair() string {
 	var out []string
 	for _, arg := range v.Pairs() {
 		out = append(out, arg.Name+" "+arg.Type)
@@ -54,7 +62,7 @@ func (v QueryValue) Pair() string {
 
 // Return the argument name and type for query methods. Should only be used in
 // the context of method arguments.
-func (v QueryValue) Pairs() []Argument {
+func (v *QueryValue) Pairs() []Argument {
 	if v.isEmpty() {
 		return nil
 	}
@@ -76,14 +84,14 @@ func (v QueryValue) Pairs() []Argument {
 	}
 }
 
-func (v QueryValue) SlicePair() string {
+func (v *QueryValue) SlicePair() string {
 	if v.isEmpty() {
 		return ""
 	}
 	return v.Name + " []" + v.DefineType()
 }
 
-func (v QueryValue) Type() string {
+func (v *QueryValue) Type() string {
 	if v.Typ != "" {
 		return v.Typ
 	}
@@ -108,7 +116,7 @@ func (v *QueryValue) ReturnName() string {
 	return escape(v.Name)
 }
 
-func (v QueryValue) UniqueFields() []Field {
+func (v *QueryValue) UniqueFields() []Field {
 	seen := map[string]struct{}{}
 	fields := make([]Field, 0, len(v.Struct.Fields))
 
@@ -123,7 +131,25 @@ func (v QueryValue) UniqueFields() []Field {
 	return fields
 }
 
-func (v QueryValue) Params() string {
+func (v *QueryValue) Fields() []Field {
+	if v.Struct == nil {
+		if v.Typ == "" {
+			return nil
+		}
+		return []Field{
+			{
+				Name:             v.Name,
+				VariableForField: v.Name,
+				DBName:           v.DBName,
+				Type:             v.Type(),
+				Column:           v.Column,
+			},
+		}
+	}
+	return v.Struct.Fields
+}
+
+func (v *QueryValue) Params() string {
 	if v.isEmpty() {
 		return ""
 	}
@@ -150,7 +176,7 @@ func (v QueryValue) Params() string {
 	return "\n" + strings.Join(out, ",\n")
 }
 
-func (v QueryValue) ColumnNames() []string {
+func (v *QueryValue) ColumnNames() []string {
 	if v.Struct == nil {
 		return []string{v.DBName}
 	}
@@ -161,7 +187,7 @@ func (v QueryValue) ColumnNames() []string {
 	return names
 }
 
-func (v QueryValue) ColumnNamesAsGoSlice() string {
+func (v *QueryValue) ColumnNamesAsGoSlice() string {
 	if v.Struct == nil {
 		return fmt.Sprintf("[]string{%q}", v.DBName)
 	}
@@ -178,7 +204,7 @@ func (v QueryValue) ColumnNamesAsGoSlice() string {
 
 // When true, we have to build the arguments to q.db.QueryContext in addition to
 // munging the SQL
-func (v QueryValue) HasSqlcSlices() bool {
+func (v *QueryValue) HasSqlcSlices() bool {
 	if v.Struct == nil {
 		return v.Column != nil && v.Column.IsSqlcSlice
 	}
@@ -190,7 +216,7 @@ func (v QueryValue) HasSqlcSlices() bool {
 	return false
 }
 
-func (v QueryValue) Scan() string {
+func (v *QueryValue) Scan() string {
 	var out []string
 	if v.Struct == nil {
 		if strings.HasPrefix(v.Typ, "[]") && v.Typ != "[]byte" && !v.SQLDriver.IsPGX() {
@@ -230,7 +256,7 @@ func (v QueryValue) Scan() string {
 // Deprecated: This method does not respect the Emit field set on the
 // QueryValue. It's used by the go-sql-driver-mysql/copyfromCopy.tmpl and should
 // not be used other places.
-func (v QueryValue) CopyFromMySQLFields() []Field {
+func (v *QueryValue) CopyFromMySQLFields() []Field {
 	// fmt.Printf("%#v\n", v)
 	if v.Struct != nil {
 		return v.Struct.Fields
@@ -240,11 +266,12 @@ func (v QueryValue) CopyFromMySQLFields() []Field {
 			Name:   v.Name,
 			DBName: v.DBName,
 			Type:   v.Typ,
+			Column: v.Column,
 		},
 	}
 }
 
-func (v QueryValue) VariableForField(f Field) string {
+func (v *QueryValue) VariableForField(f Field) string {
 	if !v.IsStruct() {
 		return v.Name
 	}
@@ -269,13 +296,24 @@ type Query struct {
 	Table *plugin.Identifier
 }
 
-func (q Query) hasRetType() bool {
+func (q *Query) IsReadOnly() bool {
+	return q.Cmd != metadata.CmdExec && strings.EqualFold(q.SQL[:6], "select")
+}
+
+func (q *Query) ReceiverType() string {
+	if q.IsReadOnly() {
+		return "Queries"
+	}
+	return "WriteTx"
+}
+
+func (q *Query) hasRetType() bool {
 	scanned := q.Cmd == metadata.CmdOne || q.Cmd == metadata.CmdMany ||
 		q.Cmd == metadata.CmdBatchMany || q.Cmd == metadata.CmdBatchOne
 	return scanned && !q.Ret.isEmpty()
 }
 
-func (q Query) TableIdentifierAsGoSlice() string {
+func (q *Query) TableIdentifierAsGoSlice() string {
 	escapedNames := make([]string, 0, 3)
 	for _, p := range []string{q.Table.Catalog, q.Table.Schema, q.Table.Name} {
 		if p != "" {
@@ -285,7 +323,7 @@ func (q Query) TableIdentifierAsGoSlice() string {
 	return "[]string{" + strings.Join(escapedNames, ", ") + "}"
 }
 
-func (q Query) TableIdentifierForMySQL() string {
+func (q *Query) TableIdentifierForMySQL() string {
 	escapedNames := make([]string, 0, 3)
 	for _, p := range []string{q.Table.Catalog, q.Table.Schema, q.Table.Name} {
 		if p != "" {

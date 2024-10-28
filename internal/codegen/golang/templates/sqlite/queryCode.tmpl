@@ -75,7 +75,7 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
     {{- if ne .Cmd ":exec" }}
     {{ $fields := .Ret.Fields }}
     {{- if $fields }}
-    col := 1
+    col := 0
     {{- range $fields }}
         {{- template "fetchColumn" . }}
     {{- end }}

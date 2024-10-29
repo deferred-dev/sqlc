@@ -43,7 +43,7 @@ func sqliteType(_req *plugin.GenerateRequest, _options *opts.Options, col *plugi
 		}
 		return "sql.NullTime"
 	case "any":
-		return "interface{}"
+		return "any"
 	}
 
 	switch {
@@ -65,6 +65,6 @@ func sqliteType(_req *plugin.GenerateRequest, _options *opts.Options, col *plugi
 		if debug.Active {
 			log.Printf("unknown SQLite type: %s\n", dt)
 		}
-		return "interface{}"
+		return "any"
 	}
 }

@@ -35,7 +35,7 @@ func (gf *Field) IsNullable() bool {
 }
 
 func (gf *Field) Serialize() bool {
-	return gf.IsPointer() || strings.HasSuffix(gf.Type, "ID") || strings.HasSuffix(gf.Type, "Blob")
+	return gf.IsPointer() || (strings.IndexByte(gf.Type, '.') > 0 && !strings.HasSuffix(gf.Type, "64") && !strings.HasSuffix(gf.Type, "32") && !strings.HasSuffix(gf.Type, "Type"))
 }
 
 func (gf *Field) HasLen() bool {

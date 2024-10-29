@@ -31,7 +31,7 @@ func (gf *Field) HasSqlcSlice() bool {
 }
 
 func (gf *Field) IsNullable() bool {
-	return strings.HasPrefix(gf.Type, "types.Null") || strings.HasSuffix(gf.Type, "ID") || gf.Column != nil && !gf.Column.NotNull
+	return !gf.Column.GetNotNull()
 }
 
 func (gf *Field) Serialize() bool {

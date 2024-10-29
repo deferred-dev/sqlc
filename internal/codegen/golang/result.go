@@ -99,6 +99,7 @@ func buildStructs(req *plugin.GenerateRequest, options *opts.Options) []Struct {
 					Type:    goType(req, options, column),
 					Tags:    tags,
 					Comment: column.Comment,
+					Column:  column,
 				})
 			}
 			structs = append(structs, s)

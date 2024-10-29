@@ -28,7 +28,7 @@ func (q *Queries) Close() *lib.Error {
     q.pin.Unpin()
     var err, firstErr *lib.Error
     {{- range .ReadQueries }}
-    q.{{.FieldName}}.Close()
+    q.{{.FieldName}}.close()
     err = q.{{.FieldName}}.Err()
     if firstErr == nil {
         firstErr = err
@@ -44,7 +44,7 @@ func (q *Queries) Close() *lib.Error {
 func (txn *WriteTxn) Close() *lib.Error {
     var err, firstErr *lib.Error
     {{- range .WriteQueries }}
-    txn.{{.FieldName}}.Close()
+    txn.{{.FieldName}}.close()
     err = txn.{{.FieldName}}.Err()
     if firstErr == nil {
         firstErr = err

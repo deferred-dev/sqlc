@@ -337,6 +337,7 @@ var cmdReturnsData = map[string]struct{}{
 	metadata.CmdBatchOne:  {},
 	metadata.CmdMany:      {},
 	metadata.CmdOne:       {},
+	metadata.CmdIter:      {},
 }
 
 func putOutColumns(query *plugin.Query) bool {

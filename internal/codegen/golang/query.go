@@ -313,7 +313,8 @@ func (q *Query) ReceiverType() string {
 
 func (q *Query) hasRetType() bool {
 	scanned := q.Cmd == metadata.CmdOne || q.Cmd == metadata.CmdMany ||
-		q.Cmd == metadata.CmdBatchMany || q.Cmd == metadata.CmdBatchOne
+		q.Cmd == metadata.CmdBatchMany || q.Cmd == metadata.CmdBatchOne ||
+		q.Cmd == metadata.CmdIter
 	return scanned && !q.Ret.isEmpty()
 }
 

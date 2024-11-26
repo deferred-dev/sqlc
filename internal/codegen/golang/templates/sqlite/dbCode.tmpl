@@ -1,9 +1,12 @@
 {{define "dbCodeTemplateStd"}}
 
 type Queries struct {
-    Ctx context.Context
     conn *sqlite.Conn
     pin runtime.Pinner
+    beginRead iter
+    beginWrite iter
+    commit iter
+    rollback iter
     {{- range .ReadQueries }}
     {{.FieldName}} {{.MethodName}}Stmt
     {{- end}}
@@ -11,7 +14,6 @@ type Queries struct {
 
 type WriteTxn struct {
     Queries
-    finish func(*error)
     {{- range .WriteQueries }}
     {{.FieldName}} {{.MethodName}}Stmt
     {{- end}}
@@ -22,6 +24,44 @@ func (q *Queries) init(conn *sqlite.Conn) {
         panic("Queries already initialized")
     }
     q.conn = conn
+    q.beginRead.init(q, "begin", "begin", false)
+    q.beginWrite.init(q, "begin immediate", "begin immediate", true)
+    q.commit.init(q, "commit", "commit", false)
+    q.rollback.init(q, "rollback", "rollback", false)
+}
+
+func (q *Queries) BeginRead() (int64, *lib.Error) {
+    q.beginRead.Next(q)
+    err := q.beginRead.Err()
+    q.beginRead.Reset()
+    if err != nil {
+        return 0, err
+    }
+    return q.GetVersion()
+}
+
+func (q *Queries) BeginWrite() (int64, *lib.Error) {
+    q.beginWrite.Next(q)
+    err := q.beginWrite.Err()
+    q.beginWrite.Reset()
+    if err != nil {
+        return 0, err
+    }
+    return q.GetVersion()
+}
+
+func (q *Queries) Commit() (*lib.Error) {
+    q.commit.Next()
+    err := q.commit.Err()
+    q.commit.Reset()
+    return err
+}
+
+func (q *Queries) Rollback() (*lib.Error) {
+    q.rollback.Next()
+    err := q.rollback.Err()
+    q.rollback.Reset()
+    return err
 }
 
 func (q *Queries) Close() *lib.Error {

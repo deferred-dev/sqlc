@@ -122,7 +122,9 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret
 {{end}}
 
 {{if eq .Cmd ":iter"}}
-func (q *{{ .ReceiverType }}) Begin{{.MethodName}}({{ .Arg.Pair }}) func(yield func(row {{.Ret.DefineType}}) bool) {
+type {{.MethodName}}Iterator func(yield func(row {{.Ret.DefineType}}) bool)
+
+func (q *{{ .ReceiverType }}) {{.MethodName}}Cursor({{ .Arg.Pair }}) {{.MethodName}}Iterator {
     r := &q.{{ .FieldName }}
     r.bind(q, {{ .Arg.Names }})
     return func(yield func(row {{.Ret.DefineType}}) bool) {
@@ -131,7 +133,7 @@ func (q *{{ .ReceiverType }}) Begin{{.MethodName}}({{ .Arg.Pair }}) func(yield f
     }
 }
 
-func (q *{{ .ReceiverType }}) End{{.MethodName}}() *lib.Error {
+func (_ {{.MethodName}}Iterator) Close(q *{{ .ReceiverType }}) *lib.Error {
     return q.{{ .FieldName }}.Err()
 }
 {{end}}

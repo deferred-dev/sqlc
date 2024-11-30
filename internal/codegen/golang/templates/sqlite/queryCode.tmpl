@@ -8,6 +8,9 @@ type {{ .MethodName }}Stmt struct {
     iter
     {{- if ne .Cmd ":exec" }}
     Row {{.Ret.DefineType}}
+    {{- if eq .Cmd ":map" }}
+    Key {{.Ret.KeyType}}
+    {{- end }}
     {{- end }}
 }
 
@@ -31,9 +34,8 @@ func (r *{{ .MethodName }}Stmt) bind(q *{{ .ReceiverType }}, {{ .Arg.Pair }}) {
     {{- if .Arg.HasSqlcSlices }}
         {{- range .Arg.Fields }}
             {{- if .HasSqlcSlice }}
-                length := len({{ .VariableForField }})
-                if length > 0 {
-                  query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", strings.Repeat(",?", length)[1:], 1)
+                if len({{ .VariableForField }}) > 0 {
+                  query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", strings.Repeat(",?", len({{ .VariableForField }}))[1:], 1)
                 } else {
                   query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", "NULL", 1)
                 }
@@ -76,6 +78,9 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
     {{ $fields := .Ret.Fields }}
     {{- if $fields }}
     col := 0
+    {{- if eq .Cmd ":map" }}
+        {{- template "fetchColumn" .Ret.KeyField }}
+    {{- end }}
     {{- range $fields }}
         {{- template "fetchColumn" . }}
     {{- end }}
@@ -112,6 +117,29 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret
     defer r.reset()
     for r.Next() {
         results = append(results, r.Row)
+    }
+    err = r.Err()
+    if err != nil {
+        results = nil
+    }
+    return
+}
+{{end}}
+
+{{if eq .Cmd ":map"}}
+func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.Ret.KeyType}}]{{.Ret.DefineType}}, err *lib.Error) {
+    r := &q.{{ .FieldName }}
+    r.bind(q, {{ .Arg.Names }})
+    defer r.reset()
+    if !r.Next() {
+        err = r.Err()
+        return
+    }
+    results = map[{{.Ret.KeyType}}]{{.Ret.DefineType}}{
+        r.Key: r.Row,
+    }
+    for r.Next() {
+        results[r.Key] = r.Row
     }
     err = r.Err()
     if err != nil {

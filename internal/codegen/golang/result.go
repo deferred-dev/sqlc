@@ -248,14 +248,14 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 					Column: p.Column,
 				})
 			}
-			s, err := columnsToStruct(req, options, gq.MethodName+"Params", cols, false)
+			gs, err := columnsToStruct(req, options, gq.MethodName+"Params", cols, false)
 			if err != nil {
 				return nil, err
 			}
 			gq.Arg = QueryValue{
 				Emit:        true,
 				Name:        "arg",
-				Struct:      s,
+				Struct:      gs,
 				SQLDriver:   sqlpkg,
 				EmitPointer: options.EmitParamsStructPointers,
 			}
@@ -278,29 +278,21 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 				SQLDriver: sqlpkg,
 			}
 		} else if putOutColumns(query) {
-			var gs *Struct
-			var emit bool
-
-			for _, s := range structs {
-				if len(s.Fields) != len(query.Columns) {
-					continue
-				}
-				same := true
-				for i, f := range s.Fields {
-					c := query.Columns[i]
-					sameName := f.Name == StructName(columnName(c, i), options)
-					sameType := f.Type == goType(req, options, c)
-					sameTable := sdk.SameTableName(c.Table, s.Table, req.Catalog.DefaultSchema)
-					if !sameName || !sameType || !sameTable {
-						same = false
-					}
-				}
-				if same {
-					gs = &s
-					break
+			var keyField *Field
+			if query.Cmd == metadata.CmdMap {
+				c := query.Columns[0]
+				query.Columns = query.Columns[1:]
+				colName := columnName(c, 0)
+				keyField = &Field{
+					Name:       StructName(colName, options),
+					DBName:     colName,
+					IsKeyField: true,
+					Type:       goType(req, options, c),
+					Column:     c,
 				}
 			}
 
+			gs, noEmit := getExistingStructIfDuplicate(req, options, structs, query, query.Columns)
 			if gs == nil {
 				var columns []goColumn
 				for i, c := range query.Columns {
@@ -315,12 +307,12 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 				if err != nil {
 					return nil, err
 				}
-				emit = true
 			}
 			gq.Ret = QueryValue{
-				Emit:        emit,
+				Emit:        !noEmit,
 				Name:        "i",
 				Struct:      gs,
+				KeyField:    keyField,
 				SQLDriver:   sqlpkg,
 				EmitPointer: options.EmitResultStructPointers,
 			}
@@ -332,12 +324,40 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 	return qs, nil
 }
 
+func getExistingStructIfDuplicate(req *plugin.GenerateRequest, options *opts.Options, structs []Struct, query *plugin.Query, columns []*plugin.Column) (*Struct, bool) {
+StructLoop:
+	for _, s := range structs {
+		if s.Name == "Queue" && query.Name == "CreateQueue" {
+			fmt.Println("getExistingStructIfDuplicate for Queue and CreateQueueParams", len(s.Fields), len(columns))
+		}
+		if len(s.Fields) != len(columns) {
+			continue
+		}
+		for i, f := range s.Fields {
+			c := columns[i]
+			// Identical column
+			if c == f.Column {
+				continue
+			}
+			sameName := f.Name == StructName(columnName(c, i), options)
+			sameType := f.Type == goType(req, options, c)
+			sameTable := sdk.SameTableName(c.Table, s.Table, req.Catalog.DefaultSchema)
+			if !sameName || !sameType || !sameTable {
+				continue StructLoop
+			}
+		}
+		return &s, true
+	}
+	return nil, false
+}
+
 var cmdReturnsData = map[string]struct{}{
 	metadata.CmdBatchMany: {},
 	metadata.CmdBatchOne:  {},
 	metadata.CmdMany:      {},
 	metadata.CmdOne:       {},
 	metadata.CmdIter:      {},
+	metadata.CmdMap:       {},
 }
 
 func putOutColumns(query *plugin.Query) bool {

@@ -13,6 +13,7 @@ import (
 type Field struct {
 	Name             string // CamelCased name for Go
 	VariableForField string // Variable name for the field (including structVar.name, if part of a struct)
+	IsKeyField       bool   // If this field is being output as the key for a map
 	DBName           string // Name as used in the DB
 	Type             string
 	Tags             map[string]string
@@ -116,6 +117,9 @@ func (gf *Field) FetchMethod() string {
 }
 
 func (gf *Field) FetchInto() string {
+	if gf.IsKeyField {
+		return "r.Key"
+	}
 	if gf.Name == "" {
 		return "r.Row"
 	}

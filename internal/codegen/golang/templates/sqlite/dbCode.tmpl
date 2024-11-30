@@ -31,9 +31,9 @@ func (q *Queries) init(conn *sqlite.Conn) {
 }
 
 func (q *Queries) BeginRead() (int64, *lib.Error) {
-    q.beginRead.Next(q)
+    q.beginRead.Next()
     err := q.beginRead.Err()
-    q.beginRead.Reset()
+    q.beginRead.reset()
     if err != nil {
         return 0, err
     }
@@ -41,9 +41,9 @@ func (q *Queries) BeginRead() (int64, *lib.Error) {
 }
 
 func (q *Queries) BeginWrite() (int64, *lib.Error) {
-    q.beginWrite.Next(q)
+    q.beginWrite.Next()
     err := q.beginWrite.Err()
-    q.beginWrite.Reset()
+    q.beginWrite.reset()
     if err != nil {
         return 0, err
     }
@@ -53,14 +53,14 @@ func (q *Queries) BeginWrite() (int64, *lib.Error) {
 func (q *Queries) Commit() (*lib.Error) {
     q.commit.Next()
     err := q.commit.Err()
-    q.commit.Reset()
+    q.commit.reset()
     return err
 }
 
 func (q *Queries) Rollback() (*lib.Error) {
     q.rollback.Next()
     err := q.rollback.Err()
-    q.rollback.Reset()
+    q.rollback.reset()
     return err
 }
 

@@ -326,6 +326,10 @@ func (q *Query) hasRetType() bool {
 	return scanned && !q.Ret.isEmpty()
 }
 
+func (q *Query) FetchRowInNext() bool {
+	return q.Cmd != metadata.CmdExec && q.Cmd != metadata.CmdIter
+}
+
 func (q *Query) TableIdentifierAsGoSlice() string {
 	escapedNames := make([]string, 0, 3)
 	for _, p := range []string{q.Table.Catalog, q.Table.Schema, q.Table.Name} {

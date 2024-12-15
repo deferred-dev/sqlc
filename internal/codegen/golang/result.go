@@ -327,9 +327,6 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 func getExistingStructIfDuplicate(req *plugin.GenerateRequest, options *opts.Options, structs []Struct, query *plugin.Query, columns []*plugin.Column) (*Struct, bool) {
 StructLoop:
 	for _, s := range structs {
-		if s.Name == "Queue" && query.Name == "CreateQueue" {
-			fmt.Println("getExistingStructIfDuplicate for Queue and CreateQueueParams", len(s.Fields), len(columns))
-		}
 		if len(s.Fields) != len(columns) {
 			continue
 		}

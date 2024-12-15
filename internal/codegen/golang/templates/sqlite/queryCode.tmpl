@@ -1,5 +1,6 @@
 {{define "queryCodeStd"}}
 {{range $.AllQueries .SourceName}}
+{{$query := .}}
 const {{.ConstantName}} = {{$.Q}}-- name: {{.MethodName}} {{.Cmd}}
 {{escape .SQL}}
 {{$.Q}}
@@ -34,11 +35,7 @@ func (r *{{ .MethodName }}Stmt) bind(q *{{ .ReceiverType }}, {{ .Arg.Pair }}) {
     {{- if .Arg.HasSqlcSlices }}
         {{- range .Arg.Fields }}
             {{- if .HasSqlcSlice }}
-                if len({{ .VariableForField }}) > 0 {
-                  query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", strings.Repeat(",?", len({{ .VariableForField }}))[1:], 1)
-                } else {
-                  query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", "NULL", 1)
-                }
+                query = strings.Replace(query, "/*SLICE:{{.Column.Name}}*/?", slicePlaceholders(len({{ .VariableForField }})), 1)
             {{- end }}
         {{- end }}
     {{- end }}
@@ -74,7 +71,14 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
     if r.err != nil {
         return false
     }
-    {{- if ne .Cmd ":exec" }}
+    return r.Fetch()
+}
+
+func (r *{{ .MethodName }}Stmt) Fetch() bool {
+    if r.err != nil {
+        return false
+    }
+
     {{ $fields := .Ret.Fields }}
     {{- if $fields }}
     col := 0
@@ -85,7 +89,7 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
         {{- template "fetchColumn" . }}
     {{- end }}
     {{- end }}
-    {{- end }}
+
     return r.err == nil
 }
 
@@ -95,14 +99,14 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
     r.bind(q, {{ .Arg.Names }})
     defer r.reset()
     ok := r.Next()
-    err = r.Err()
+    err = r.takeErr()
     if err != nil {
         return
     }
     if !ok {
-        err = lib.ErrorWithDepth(errNoRows, 2)
+        err = lib.WrapWithDepth(errNoRows, 3)
     } else if r.Next() {
-        err = lib.ErrorWithDepth(errTooManyRows, 2)
+        err = lib.WrapWithDepth(errTooManyRows, 3)
     } else {
         result = r.Row
     }
@@ -118,7 +122,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret
     for r.Next() {
         results = append(results, r.Row)
     }
-    err = r.Err()
+    err = r.takeErr()
     if err != nil {
         results = nil
     }
@@ -132,7 +136,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
     r.bind(q, {{ .Arg.Names }})
     defer r.reset()
     if !r.Next() {
-        err = r.Err()
+        err = r.takeErr()
         return
     }
     results = map[{{.Ret.KeyType}}]{{.Ret.DefineType}}{
@@ -141,7 +145,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
     for r.Next() {
         results[r.Key] = r.Row
     }
-    err = r.Err()
+    err = r.takeErr()
     if err != nil {
         results = nil
     }
@@ -150,20 +154,79 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
 {{end}}
 
 {{if eq .Cmd ":iter"}}
-type {{.MethodName}}Iterator func(yield func(row {{.Ret.DefineType}}) bool)
+func (r *{{ .MethodName }}Stmt) HasNext() bool {
+    if !r.iter.Next() {
+        return false
+    }
+    if r.err != nil {
+        return false
+    }
+    return r.err == nil
+}
 
-func (q *{{ .ReceiverType }}) {{.MethodName}}Cursor({{ .Arg.Pair }}) {{.MethodName}}Iterator {
-    r := &q.{{ .FieldName }}
-    r.bind(q, {{ .Arg.Names }})
+func (r *{{ .MethodName }}Stmt) Close() *lib.Error {
+    err := r.takeErr()
+    r.reset()
+    return err
+}
+
+func (r *{{ .MethodName }}Stmt) Range() func(yield func(row {{.Ret.DefineType}}) bool) {
     return func(yield func(row {{.Ret.DefineType}}) bool) {
         defer r.reset()
         for r.Next() && yield(r.Row) {}
     }
 }
 
-func (_ {{.MethodName}}Iterator) Close(q *{{ .ReceiverType }}) *lib.Error {
-    return q.{{ .FieldName }}.Err()
+func (q *{{ .ReceiverType }}) {{.MethodName}}Cursor({{ .Arg.Pair }}) *{{ .MethodName }}Stmt {
+    r := &q.{{ .FieldName }}
+    r.bind(q, {{ .Arg.Names }})
+    return r
 }
+
+{{- range $index, $field := .Ret.Fields }}
+{{- if $field.IsNullable }}
+func (r *{{ $query.MethodName }}Stmt) Peek{{ $field.Name }}() {{ $field.BindType }} {
+    const col = {{$index}}
+    return {{ $field.FetchMethod }}(col)
+}
+{{- else }}
+func (r *{{ $query.MethodName }}Stmt) Peek{{ $field.Name }}() (val {{ $field.BindType }}, isNull bool) {
+    const col = {{$index}}
+    if r.stmt.ColumnIsNull(col) {
+        isNull = true
+        return
+    }
+    val = {{ $field.FetchMethod }}(col)
+    return
+}
+{{- end }}
+
+func (r *{{ $query.MethodName }}Stmt) Get{{ $field.Name }}() (val {{ $field.Type }}, ok bool) {
+    var raw {{ $field.BindType }}
+{{- if $field.IsNullable }}
+    raw = r.Peek{{ $field.Name }}()
+{{- else }}
+    var isNull bool
+    raw, isNull = r.Peek{{ $field.Name }}()
+    if isNull {
+        return val, true
+    }
+{{- end }}
+    {{- if $field.Deserialize }}
+        var err *lib.Error
+        val, err = {{ $field.DeserializeMethod }}(raw)
+        if err != nil {
+            r.setErr(err)
+            return val, false
+        }
+    {{- else if $field.NeedsCast $field.BindType }}
+        val = {{ $field.Type }}(raw)
+    {{- else }}
+        val = raw
+    {{- end }}
+    return val, true
+}
+{{- end }}
 {{end}}
 
 {{if eq .Cmd ":exec"}}
@@ -172,7 +235,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) *lib.Error {
     r.bind(q, {{ .Arg.Names }})
     defer r.reset()
     r.Next()
-    return r.Err()
+    return r.takeErr()
 }
 {{end}}
 
@@ -253,7 +316,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) *lib.Error {
     {
     {{- end }}
         raw := {{ .FetchMethod }}(col)
-        {{- if .Serialize }}
+        {{- if .Deserialize }}
             v, err := {{ .DeserializeMethod }}(raw)
             if err != nil {
                 r.setErr(err)

@@ -36,7 +36,11 @@ func (gf *Field) IsNullable() bool {
 }
 
 func (gf *Field) Serialize() bool {
-	return gf.IsPointer() || (strings.IndexByte(gf.Type, '.') > 0 && !strings.HasSuffix(gf.Type, "64") && !strings.HasSuffix(gf.Type, "32") && !strings.HasSuffix(gf.Type, "Type"))
+	return gf.IsPointer() || (strings.IndexByte(gf.Type, '.') > 0 && !strings.HasSuffix(gf.Type, "Duration"))
+}
+
+func (gf *Field) Deserialize() bool {
+	return gf.IsPointer() || (strings.IndexByte(gf.Type, '.') > 0 && !strings.HasSuffix(gf.Type, "64") && !strings.HasSuffix(gf.Type, "32") && !strings.HasSuffix(gf.Type, "Type") && !strings.HasSuffix(gf.Type, "Duration"))
 }
 
 func (gf *Field) HasLen() bool {
@@ -65,7 +69,7 @@ func (gf *Field) BindType() string {
 		ty = ty[2:]
 	}
 	switch {
-	case ty == "uint8", ty == "int8", ty == "uint32":
+	case ty == "uint8", ty == "int8", ty == "uint32", strings.HasSuffix(ty, "Duration"):
 		return "int64"
 	case ty == "float32":
 		return "float64"

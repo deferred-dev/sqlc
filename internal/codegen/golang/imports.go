@@ -124,7 +124,6 @@ func (i *importer) dbImports() fileImports {
 	}
 	std := []ImportSpec{
 		{Path: "runtime"},
-		{Path: "context"},
 	}
 
 	sqlpkg := parseDriver(i.Options.SqlPackage)

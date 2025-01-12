@@ -312,6 +312,10 @@ func (q *Query) IsReadOnly() bool {
 	return q.Cmd != metadata.CmdExec && strings.EqualFold(q.SQL[:6], "select")
 }
 
+func (q *Query) HasReturning() bool {
+	return !q.IsReadOnly() && !q.Ret.isEmpty()
+}
+
 func (q *Query) ReceiverType() string {
 	if q.IsReadOnly() {
 		return "Queries"

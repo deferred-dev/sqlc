@@ -98,6 +98,11 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
     ok := r.Next()
     err = r.takeErr()
     if err != nil {
+        {{if .HasReturning}}
+        if IsErrNoRows(err) {
+            err = nil
+        }
+        {{end}}
         return
     }
     if !ok {

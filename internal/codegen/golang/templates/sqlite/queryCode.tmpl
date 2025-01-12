@@ -68,9 +68,6 @@ func (r *{{ .MethodName }}Stmt) Next() bool {
     if !r.iter.Next() {
         return false
     }
-    if r.err != nil {
-        return false
-    }
     return r.Fetch()
 }
 
@@ -155,13 +152,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
 
 {{if eq .Cmd ":iter"}}
 func (r *{{ .MethodName }}Stmt) HasNext() bool {
-    if !r.iter.Next() {
-        return false
-    }
-    if r.err != nil {
-        return false
-    }
-    return r.err == nil
+    return r.iter.Next()
 }
 
 func (r *{{ .MethodName }}Stmt) Close() *lib.Error {

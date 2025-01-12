@@ -19,19 +19,23 @@ type WriteTxn struct {
     {{- end}}
 }
 
-func (q *Queries) init(conn *sqlite.Conn) {
+func (q *Queries) init(conn *sqlite.Conn, isWriteTxn bool) {
     if q.conn != nil {
         panic("Queries already initialized")
     }
     q.conn = conn
     q.beginRead.init(q, "begin", "begin", false)
     q.commit.init(q, "commit", "commit", false)
+    if !isWriteTxn {
+        runtime.SetFinalizer(q, (*Queries).Close)
+    }
 }
 
 func (txn *WriteTxn) init(conn *sqlite.Conn) {
-    txn.Queries.init(conn)
+    txn.Queries.init(conn, true)
     txn.beginWrite.init(&txn.Queries, "begin immediate", "begin immediate", false)
     txn.rollback.init(&txn.Queries, "rollback", "rollback", false)
+    runtime.SetFinalizer(txn, (*WriteTxn).Close)
 }
 
 func (q *Queries) BeginRead() (int64, *lib.Error) {
@@ -55,6 +59,7 @@ func (txn *WriteTxn) BeginWrite() (int64, *lib.Error) {
 }
 
 func (q *Queries) Commit() (*lib.Error) {
+    q.pin.Unpin()
     q.commit.Next()
     err := q.commit.takeErr()
     q.commit.reset()
@@ -62,6 +67,7 @@ func (q *Queries) Commit() (*lib.Error) {
 }
 
 func (txn *WriteTxn) Rollback() (*lib.Error) {
+    txn.Queries.pin.Unpin()
     txn.rollback.Next()
     err := txn.rollback.takeErr()
     txn.rollback.reset()
@@ -69,16 +75,17 @@ func (txn *WriteTxn) Rollback() (*lib.Error) {
 }
 
 func (q *Queries) Close() *lib.Error {
+    if q.conn == nil {
+        return nil
+    }
     q.pin.Unpin()
-    var err, firstErr *lib.Error
+    var firstErr *lib.Error
     {{- range .ReadQueries }}
     q.{{.FieldName}}.close()
-    err = q.{{.FieldName}}.takeErr()
-    if firstErr == nil {
-        firstErr = err
-    }
+    firstErr = firstErr.Or(q.{{.FieldName}}.takeErr())
     {{- end}}
     extErr := q.conn.Close()
+    q.conn = nil
     if firstErr == nil && extErr != nil {
         firstErr = lib.Wrap(extErr)
     }
@@ -86,19 +93,15 @@ func (q *Queries) Close() *lib.Error {
 }
 
 func (txn *WriteTxn) Close() *lib.Error {
-    var err, firstErr *lib.Error
+    if txn.conn == nil {
+        return nil
+    }
+    var firstErr *lib.Error
     {{- range .WriteQueries }}
     txn.{{.FieldName}}.close()
-    err = txn.{{.FieldName}}.takeErr()
-    if firstErr == nil {
-        firstErr = err
-    }
+    firstErr = firstErr.Or(txn.{{.FieldName}}.takeErr())
     {{- end}}
-    err = txn.Queries.Close()
-    if firstErr == nil {
-        firstErr = err
-    }
-    return firstErr
+    return firstErr.Or(txn.Queries.Close())
 }
 
 {{end}}

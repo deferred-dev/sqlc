@@ -117,7 +117,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
 {{end}}
 
 {{if eq .Cmd ":many"}}
-func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret.DefineType}}, err *lib.Error) {
+func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}, results []{{.Ret.DefineType}}) ([]{{.Ret.DefineType}}, err *lib.Error) {
     r := &q.{{ .FieldName }}
     r.bind(q, {{ .Arg.Names }})
     defer r.reset()
@@ -126,9 +126,9 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results []{{.Ret
     }
     err = r.takeErr()
     if err != nil {
-        results = nil
+        return nil, err
     }
-    return
+    return results, nil
 }
 {{end}}
 

@@ -117,14 +117,14 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (result {{.Ret.De
 {{end}}
 
 {{if eq .Cmd ":many"}}
-func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}, results []{{.Ret.DefineType}}) ([]{{.Ret.DefineType}}, err *lib.Error) {
+func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}, results []{{.Ret.DefineType}}) ([]{{.Ret.DefineType}}, *lib.Error) {
     r := &q.{{ .FieldName }}
     r.bind(q, {{ .Arg.Names }})
     defer r.reset()
     for r.Next() {
         results = append(results, r.Row)
     }
-    err = r.takeErr()
+    err := r.takeErr()
     if err != nil {
         return nil, err
     }

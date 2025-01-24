@@ -34,6 +34,7 @@ const (
 	CmdBatchOne   = ":batchone"
 	CmdIter       = ":iter"
 	CmdMap        = ":map"
+	CmdSet        = ":set"
 )
 
 // A query name must be a valid Go identifier
@@ -103,7 +104,7 @@ func ParseQueryNameAndType(t string, commentStyle CommentSyntax) (string, string
 		queryName := part[2]
 		queryType := strings.TrimSpace(part[3])
 		switch queryType {
-		case CmdOne, CmdMany, CmdExec, CmdExecResult, CmdExecRows, CmdExecLastId, CmdCopyFrom, CmdBatchExec, CmdBatchMany, CmdBatchOne, CmdIter, CmdMap:
+		case CmdOne, CmdMany, CmdExec, CmdExecResult, CmdExecRows, CmdExecLastId, CmdCopyFrom, CmdBatchExec, CmdBatchMany, CmdBatchOne, CmdIter, CmdMap, CmdSet:
 		default:
 			return "", "", fmt.Errorf("invalid query type: %s", queryType)
 		}

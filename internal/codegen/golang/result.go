@@ -271,15 +271,27 @@ func buildQueries(req *plugin.GenerateRequest, options *opts.Options, structs []
 			c := query.Columns[0]
 			name := columnName(c, 0)
 			name = strings.Replace(name, "$", "_", -1)
+			var keyField *Field
+			if query.Cmd == metadata.CmdSet {
+				query.Columns = query.Columns[1:]
+				keyField = &Field{
+					Name:       StructName(name, options),
+					DBName:     name,
+					IsKeyField: true,
+					Type:       goType(req, options, c),
+					Column:     c,
+				}
+			}
 			gq.Ret = QueryValue{
 				Name:      escape(name),
 				DBName:    name,
 				Typ:       goType(req, options, c),
+				KeyField:  keyField,
 				SQLDriver: sqlpkg,
 			}
 		} else if putOutColumns(query) {
 			var keyField *Field
-			if query.Cmd == metadata.CmdMap {
+			if query.Cmd == metadata.CmdMap || query.Cmd == metadata.CmdSet {
 				c := query.Columns[0]
 				query.Columns = query.Columns[1:]
 				colName := columnName(c, 0)
@@ -355,6 +367,7 @@ var cmdReturnsData = map[string]struct{}{
 	metadata.CmdOne:       {},
 	metadata.CmdIter:      {},
 	metadata.CmdMap:       {},
+	metadata.CmdSet:       {},
 }
 
 func putOutColumns(query *plugin.Query) bool {

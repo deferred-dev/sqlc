@@ -16,7 +16,7 @@ type QueryValue struct {
 	DBName      string // The name of the field in the database. Only set if Struct==nil.
 	Struct      *Struct
 	Typ         string
-	KeyField    *Field // Only set if Struct!=nil && Cmd==metadata.CmdMap
+	KeyField    *Field // Only set if Struct!=nil && Cmd==metadata.CmdMap || Cmd==metadata.CmdSet
 	SQLDriver   opts.SQLDriver
 
 	// Column is kept so late in the generation process around to differentiate
@@ -326,7 +326,7 @@ func (q *Query) ReceiverType() string {
 func (q *Query) hasRetType() bool {
 	scanned := q.Cmd == metadata.CmdOne || q.Cmd == metadata.CmdMany ||
 		q.Cmd == metadata.CmdBatchMany || q.Cmd == metadata.CmdBatchOne ||
-		q.Cmd == metadata.CmdIter || q.Cmd == metadata.CmdMap
+		q.Cmd == metadata.CmdIter || q.Cmd == metadata.CmdMap || q.Cmd == metadata.CmdSet
 	return scanned && !q.Ret.isEmpty()
 }
 

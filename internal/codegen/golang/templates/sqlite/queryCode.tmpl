@@ -139,6 +139,7 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
     defer r.reset()
     if !r.Next() {
         err = r.takeErr()
+        results = map[{{.Ret.KeyType}}]{{.Ret.DefineType}}{}
         return
     }
     results = map[{{.Ret.KeyType}}]{{.Ret.DefineType}}{
@@ -146,6 +147,30 @@ func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.R
     }
     for r.Next() {
         results[r.Key] = r.Row
+    }
+    err = r.takeErr()
+    if err != nil {
+        results = nil
+    }
+    return
+}
+{{end}}
+
+{{if eq .Cmd ":set"}}
+func (q *{{ .ReceiverType }}) {{.MethodName}}({{ .Arg.Pair }}) (results map[{{.Ret.KeyType}}]struct{}, err *lib.Error) {
+    r := &q.{{ .FieldName }}
+    r.bind(q, {{ .Arg.Names }})
+    defer r.reset()
+    if !r.Next() {
+        err = r.takeErr()
+        results = map[{{.Ret.KeyType}}]struct{}{}
+        return
+    }
+    results = map[{{.Ret.KeyType}}]struct{}{
+        r.Row: {},
+    }
+    for r.Next() {
+        results[r.Row] = struct{}{}
     }
     err = r.takeErr()
     if err != nil {
